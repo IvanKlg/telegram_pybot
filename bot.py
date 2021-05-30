@@ -1,149 +1,271 @@
 import telebot
-
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 import random
-
 import requests
-
 import os
+import redis
+import json
 
 token = os.environ["TELEGRAM_TOKEN"]
 
-#TOKEN = '1654695250:AAFB7nE0Jw9-P4PUDnO8l1Jo5Wgp_oFyM5w'
+REDIS_URL = os.environ.get("REDIS_URL")
 
 bot = telebot.TeleBot(token)
 
-#Словари
-states = {}
-current_queston = {}
-difficulty = {}
-winloss = {}
+# data = json.load(open('data.json', 'r', encoding = 'utf-8'))
+
+data = {}
+
+def save_data(key, value):
+	if REDIS_URL:
+		redis_db = redis.from_url(REDIS_URL)
+		redis_db.set(key, value)
+	else:
+		data[key] = value
+
+def load_data(key, value=None):
+	if REDIS_URL:
+		redis_db = redis.from_url(REDIS_URL)
+		return redis_db.get(key, value)
+	else:
+		return data.get(key, value)
+
+# def change_data():
+#
+# 	json.dump(
+# 			data,
+# 			open('data.json', 'w', encoding = 'utf-8'),
+# 			indent = 2,
+# 			ensure_ascii = False
+# 	)
 
 
-#Константы
+#Function that is used to create question output for user
+def ans_out(dict):
+	output = ''
+	output += dict['question'] + '\n\n'
+
+	for i in range(len(dict['answers'])):
+		output += '{n}) '.format(n = i + 1)
+		output += dict['answers'][i]
+		output += '\n'
+
+	output += '\n' + 'Номер ответа указывать не нужно'
+
+	return output
+
+def list_lines(list):
+	output = ''
+	count = 0
+	for word in list:
+		output += word
+		count += 1
+		if count <= len(list) - 1:
+			output += '\n'
+
+	return output
+
+#Constants
 MAIN_STATE = 'main'
 IN_GAME_STATE = 'in_game'
 DIFF_SET_STATE = 'set_diff'
 API_URL = 'https://stepik.akentev.com/api/millionaire'
+AV_COMMANDS = ['Спроси меня вопрос', 'Задать уровень сложности', 'Сбросить уровень сложности', 'Покажи счет', 'Очистить историю']
+DIFF_LEVELS = {'1': 'Легкий', '2': 'Средний', '3': 'Сложный'}
 
+#Keyboard constants
+basic_markup, diff_markup = [ReplyKeyboardMarkup(
+			resize_keyboard=True,
+			one_time_keyboard=True,
+			row_width=2
+		) for x in range(2)]
+
+basic_markup.add(*AV_COMMANDS)
+
+diff_markup.add(*DIFF_LEVELS.values())
 
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-	bot.reply_to(message, 'Это бот-игра в "Кто хочет стать миллионером?"\n\n Доступные команды:\n\n'
-						  + 'Cпроси меня вопрос\n'
-						  + 'Задать уровень сложности\n'
-						  + 'Сбросить уровень сложности\n'
-						  + 'Покажи счет\n'
-						  + 'Очистить историю')
+	bot.reply_to(message, 'Это бот-игра в "Кто хочет стать миллионером?"\n\n Доступные команды:\n\n' + list_lines(AV_COMMANDS), reply_markup=basic_markup)
 
-@bot.message_handler(func=lambda message: states.get(message.from_user.id, MAIN_STATE) == MAIN_STATE)
+
+@bot.message_handler(func=lambda message: True)
+def dispatcher(message):
+
+	user_id = str(message.from_user.id)
+	state = load_data('state:{}'.format(user_id), MAIN_STATE)
+
+	if state == MAIN_STATE:
+		main_handler(message)
+	elif state == IN_GAME_STATE:
+		game_handler(message)
+	elif state == DIFF_SET_STATE:
+		diff_handler(message)
+
 def main_handler(message):
-	if message.text == 'Привет':
-		bot.reply_to(message,'Ну привет!')
 
+	user_id = str(message.from_user.id)
+
+	if message.text == 'Привет':
+		bot.reply_to(message,'Ну привет!', reply_markup = basic_markup)
+
+	# this block uploads the question from API and sends user to an answer state
 	elif message.text == 'Спроси меня вопрос':
 
-		if difficulty.get(message.from_user.id) == None:
+		# if user has not set difficulty level, the questions will be easy by default
+		if load_data('difficulty:{}'.format(user_id)) == None:
+			load_question = json.dumps(requests.get(API_URL).json())
+			save_data('current_question:{}'.format(user_id), load_question)
 
-			current_queston[message.from_user.id] = requests.get(API_URL).json()
+		# otherwise the chosen difficulty level will be used via params
+		else:
+			load_difficulty = load_data('difficulty:{}'.format(user_id))
+			load_question = json.dumps(requests.get(API_URL, params={'complexity': load_difficulty}).json())
+			save_data('current_question:{}'.format(user_id), load_question)
 
-		else: current_queston[message.from_user.id] = requests.get(API_URL, params={'complexity': difficulty[message.from_user.id]}).json()
+		# right and wrong questions recived from API are saved in the database
+		current_question = json.loads(load_data('current_question:{}'.format(user_id)))
 
-		current_queston[message.from_user.id]['right_answer'] = current_queston[message.from_user.id]['answers'][0]
+		save_data('right_answer:{}'.format(user_id), current_question['answers'][0])
 
-		current_queston[message.from_user.id]['wrong_answers'] = []
+		current_question['wrong_answers'] = []
+		for answer in current_question['answers'][1:]:
+			current_question['wrong_answers'].append(answer)
 
-		for answer in current_queston[message.from_user.id]['answers'][1:]:
+		save_data('wrong_answers:{}'.format(user_id), current_question['wrong_answers'])
 
-			current_queston[message.from_user.id]['wrong_answers'].append(answer)
+		# in the answer's list from API correct one is always the first
+		# therefore we should shuffle them for output to user
+		random.shuffle(current_question['answers'])
+		save_data('answers_output:{}'.format(user_id), current_question['answers'])
 
-		random.shuffle(current_queston[message.from_user.id]['answers'])
+		ans_markup = ReplyKeyboardMarkup(
+			resize_keyboard=True,
+			one_time_keyboard=True,
+			row_width=2
+		)
 
-		bot.reply_to(message, current_queston[message.from_user.id]['question'] + '\n\n'
-					 + '1) ' + current_queston[message.from_user.id]['answers'][0] + '\n'
-					 + '2) ' + current_queston[message.from_user.id]['answers'][1] + '\n'
-					 + '3) ' + current_queston[message.from_user.id]['answers'][2] + '\n'
-					 + '4) ' + current_queston[message.from_user.id]['answers'][3] + '\n\n'
-					 'Номер ответа указывать не нужно'
-					 )
 
-		states[message.from_user.id] = IN_GAME_STATE
+		ans_markup.add(*load_data('answers_output:{}'.format(user_id)))
+		# keyboard_answers = load_data('answers_output:{}'.format(user_id))
+		# for answer in keyboard_answers:
+		# 	ans_markup.add(KeyboardButton(answer))
 
-	#Выбор уровня сложности
+
+		#special funciton is used to form output from question data
+		bot.reply_to(message, ans_out(json.loads(load_data('current_question:{}'.format(user_id)))), reply_markup = ans_markup)
+
+		ans_markup = ReplyKeyboardRemove()
+
+		save_data('state:{}'.format(user_id), IN_GAME_STATE)
+
+		#change_data()
+
+	#Choice of difficulty level
 	elif message.text == 'Задать уровень сложности':
-		bot.reply_to(message, 'Выберите уровень сложности:\n\nЛегкий\nСредний\nСложный')
 
-		states[message.from_user.id] = DIFF_SET_STATE
+		# requesting the current level to showcase
+		# 'Легкий' is a default one
+		if load_data('difficulty:{}'.format(user_id)) == None:
+			current_diff_level = 'Легкий'
+		else:
+			current_diff_level = DIFF_LEVELS[load_data('difficulty:{}'.format(user_id))]
+
+		bot.reply_to(message, 'Текущий уровень сложности: {}\n\nВыберите желаемый уровень сложности:\n\n'.format(current_diff_level) + list_lines(DIFF_LEVELS.values()), reply_markup = diff_markup)
+
+		save_data('state:{}'.format(user_id), DIFF_SET_STATE)
+
+		#change_data()
 
 	elif message.text == 'Сбросить уровень сложности':
 
-		if difficulty.get(message.from_user.id) == None:
-			bot.reply_to(message, 'Хм, похоже что вы его еще не устанавливали.')
+		if load_data('difficulty:{}'.format(user_id)) == None:
+			bot.reply_to(message, 'Хм, похоже что вы его еще не устанавливали.\n\nУровень сложноси по умолчанию: Легкий', reply_markup = basic_markup)
 		else:
-			del difficulty[message.from_user.id]
-			bot.reply_to(message, 'Сделано!')
+			save_data('difficulty:{}'.format(user_id), None)
+			bot.reply_to(message, 'Сделано!', reply_markup = basic_markup)
 
-	#Счетчик побед и поражений
+			#change_data()
+
+	#Counter of wins and losses
 	elif message.text == 'Покажи счет' or message.text == 'Покажи счёт':
-		if winloss.get(message.from_user.id) == None:
-			bot.reply_to(message, 'Вы еще не играли :)')
-		else: bot.reply_to(message, 'Победы: {w}, Поражения: {l}'.format(w = winloss[message.from_user.id]['win'], l = winloss[message.from_user.id]['loss']))
+		#if data['winloss'].get(user_id) == None:
+		if load_data('wins:{}'.format(user_id)) == None and load_data('losses:{}'.format(user_id)) == None:
+			bot.reply_to(message, 'Вы еще не играли :)', reply_markup = basic_markup)
+		else: bot.reply_to(message, 'Победы: {w}, Поражения: {l}'.format(w = load_data('wins:{}'.format(user_id)), l = load_data('losses:{}'.format(user_id))), reply_markup = basic_markup)
 
 	elif message.text == 'Очистить историю':
-		if winloss.get(message.from_user.id) == None:
-			bot.reply_to(message, 'Вы еще не играли :)')
+		if load_data('wins:{}'.format(user_id)) == None and load_data('losses:{}'.format(user_id)) == None:
+			bot.reply_to(message, 'Вы еще не играли :)', reply_markup = basic_markup)
 		else:
-			del winloss[message.from_user.id]
-			bot.reply_to(message, 'Сделано! Забыли ;)')
+			save_data('wins:{}'.format(user_id), None)
+			save_data('losses:{}'.format(user_id), None)
+			bot.reply_to(message, 'Сделано! Забыли ;)', reply_markup = basic_markup)
 
-	else: bot.reply_to(message, 'Я тебя не понял')
+			#change_data()
+
+	else: bot.reply_to(message, 'Я тебя не понял', reply_markup = basic_markup)
 
 
-@bot.message_handler(func=lambda message: states.get(message.from_user.id) == IN_GAME_STATE)
 def game_handler(message):
 
+	user_id = str(message.from_user.id)
 
-	if message.text	== current_queston[message.from_user.id]['right_answer']:
-		bot.reply_to(message, 'Правильно!')
 
-		if winloss.get(message.from_user.id) == None:
-			winloss[message.from_user.id] = {'win': 1, 'loss': 0}
+	if message.text	== load_data('right_answer:{}'.format(user_id)):
+		bot.reply_to(message, 'Правильно!', reply_markup = basic_markup)
+
+		if load_data('wins:{}'.format(user_id)) == None and load_data('losses:{}'.format(user_id)) == None:
+			save_data('wins:{}'.format(user_id), '1')
+			save_data('losses:{}'.format(user_id), '0')
 		else:
-			winloss[message.from_user.id]['win'] += 1
+			win_score = int(load_data('wins:{}'.format(user_id)))
+			win_score += 1
+			win_score = str(win_score)
+			save_data('wins:{}'.format(user_id), win_score)
 
 
-	elif message.text in current_queston[message.from_user.id]['wrong_answers']:
-		bot.reply_to(message, 'Неправильно :(')
+	elif message.text in load_data('wrong_answers:{}'.format(user_id)):
+		bot.reply_to(message, 'Неправильно :(', reply_markup = basic_markup)
 
-		if winloss.get(message.from_user.id) == None:
-			winloss[message.from_user.id] = {'win': 0, 'loss': 1}
+		if load_data('wins:{}'.format(user_id)) == None and load_data('losses:{}'.format(user_id)) == None:
+			save_data('losses:{}'.format(user_id), '1')
+			save_data('wins:{}'.format(user_id), '0')
 		else:
-			winloss[message.from_user.id]['loss'] += 1
+			loss_score = int(load_data('losses:{}'.format(user_id)))
+			loss_score += 1
+			loss_score = str(loss_score)
+			save_data('losses:{}'.format(user_id), loss_score)
 
 
-	else: bot.reply_to(message, 'Я тебя не понял')
+	else: bot.reply_to(message, 'Я тебя не понял', reply_markup = basic_markup)
+
+	save_data('state:{}'.format(user_id), MAIN_STATE)
+
+	#change_data()
 
 
-	states[message.from_user.id] = MAIN_STATE
 
-@bot.message_handler(func=lambda message: states.get(message.from_user.id) == DIFF_SET_STATE)
-def game_handler(message):
+def diff_handler(message):
+
+	user_id = str(message.from_user.id)
 
 	if message.text == 'Легкий' or message.text == 'Лёгкий':
-		difficulty[message.from_user.id] = '1'
-		bot.reply_to(message, 'Готово! Теперь вы будете получать простые, и даже иногда шуточные вопросы :)')
-
+		save_data('difficulty:{}'.format(user_id), '1')
+		bot.reply_to(message, 'Готово!\n\nТеперь вы будете получать простые, и даже иногда шуточные вопросы :)', reply_markup = basic_markup)
 
 	elif message.text == 'Средний':
-		difficulty[message.from_user.id] = '2'
-		bot.reply_to(message, 'Готово! Теперь вы будете получать вопросы повышенной сложности.\nТак держать!')
+		save_data('difficulty:{}'.format(user_id), '2')
+		bot.reply_to(message, 'Готово!\n\nТеперь вы будете получать вопросы повышенной сложности.\n\nТак держать!', reply_markup = basic_markup)
 
 	elif message.text == 'Сложный':
-		difficulty[message.from_user.id] = '3'
-		bot.reply_to(message, 'Готово! Теперь вы будете получать самые сложные вопросы.\nУдачи!')
+		save_data('difficulty:{}'.format(user_id), '3')
+		bot.reply_to(message, 'Готово!\n\nТеперь вы будете получать самые сложные вопросы.\n\nУдачи!', reply_markup = basic_markup)
 
-	states[message.from_user.id] = MAIN_STATE
+	save_data('state:{}'.format(user_id), MAIN_STATE)
 
+	#change_data()
 
 
 bot.polling()

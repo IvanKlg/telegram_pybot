@@ -94,7 +94,7 @@ def send_welcome(message):
 def dispatcher(message):
 
 	user_id = str(message.from_user.id)
-	state = load_data('state:{}'.format(user_id), MAIN_STATE)
+	state = load_data('state:{}'.format(user_id), value=MAIN_STATE)
 
 	if state == MAIN_STATE:
 		main_handler(message)
@@ -147,8 +147,7 @@ def main_handler(message):
 		)
 
 
-		ans_markup.add(*load_data('answers_output:{}'.format(user_id)))
-		# keyboard_answers = load_data('answers_output:{}'.format(user_id))
+		keyboard_answers = load_data('answers_output:{}'.format(user_id))
 		# for answer in keyboard_answers:
 		# 	ans_markup.add(KeyboardButton(answer))
 

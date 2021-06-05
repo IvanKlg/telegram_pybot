@@ -94,11 +94,12 @@ def send_welcome(message):
 def dispatcher(message):
 
 	user_id = str(message.from_user.id)
+	print(user_id)
 	state = load_data('state:{}'.format(user_id))
 	print(state)
 	if state == None:
 		state = MAIN_STATE
-
+	print('going to dispatch')
 	if state == MAIN_STATE:
 		main_handler(message)
 		print('message sent to main hanlder')

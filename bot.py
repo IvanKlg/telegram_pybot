@@ -153,7 +153,7 @@ def main_handler(message):
 		# in the answer's list from API correct one is always the first
 		# therefore we should shuffle them for output to user
 		random.shuffle(current_question['answers'])
-		save_data('answers_output:{}'.format(user_id), current_question['answers'])
+		#save_data('answers_output:{}'.format(user_id), current_question['answers'])
 
 		ans_markup = ReplyKeyboardMarkup(
 			resize_keyboard=True,
@@ -162,8 +162,9 @@ def main_handler(message):
 		)
 
 
-		keyboard_answers = load_data('answers_output:{}'.format(user_id))
-		for answer in keyboard_answers:
+		#keyboard_answers = load_data('answers_output:{}'.format(user_id))
+		#for answer in keyboard_answers:
+		for answer in current_question['answers']:
 			ans_markup.add(KeyboardButton(answer))
 
 

@@ -95,8 +95,8 @@ def dispatcher(message):
 
 	user_id = str(message.from_user.id)
 	state = load_data('state:{}'.format(user_id))
+	print(state)
 	if state == None:
-		save_data('state:{}'.format(user_id), MAIN_STATE)
 		state = MAIN_STATE
 
 	if state == MAIN_STATE:
@@ -151,8 +151,8 @@ def main_handler(message):
 
 
 		keyboard_answers = load_data('answers_output:{}'.format(user_id))
-		# for answer in keyboard_answers:
-		# 	ans_markup.add(KeyboardButton(answer))
+		for answer in keyboard_answers:
+			ans_markup.add(KeyboardButton(answer))
 
 
 		#special funciton is used to form output from question data

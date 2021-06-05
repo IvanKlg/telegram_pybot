@@ -23,12 +23,12 @@ def save_data(key, value):
 	else:
 		data[key] = value
 
-def load_data(key, value=None):
+def load_data(key):
 	if REDIS_URL:
 		redis_db = redis.from_url(REDIS_URL)
-		return redis_db.get(key, value)
+		return redis_db.get(key)
 	else:
-		return data.get(key, value)
+		return data.get(key)
 
 # def change_data():
 #
@@ -94,7 +94,10 @@ def send_welcome(message):
 def dispatcher(message):
 
 	user_id = str(message.from_user.id)
-	state = load_data('state:{}'.format(user_id), value=MAIN_STATE)
+	state = load_data('state:{}'.format(user_id))
+	if state == None:
+		save_data('state:{}'.format(user_id), MAIN_STATE)
+		state = MAIN_STATE
 
 	if state == MAIN_STATE:
 		main_handler(message)

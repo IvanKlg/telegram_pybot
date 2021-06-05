@@ -102,6 +102,8 @@ def dispatcher(message):
 		state = MAIN_STATE
 	print('going to dispatch')
 
+	state = IN_GAME_STATE
+
 	if state == MAIN_STATE:
 		print('problem with handler x2')
 		main_handler(message)

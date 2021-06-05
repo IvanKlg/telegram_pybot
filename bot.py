@@ -148,7 +148,7 @@ def main_handler(message):
 		for answer in current_question['answers'][1:]:
 			current_question['wrong_answers'].append(answer)
 
-		save_data('wrong_answers:{}'.format(user_id), current_question['wrong_answers'])
+		save_data('wrong_answers:{}'.format(user_id), json.dumps(current_question['wrong_answers']))
 
 		# in the answer's list from API correct one is always the first
 		# therefore we should shuffle them for output to user
@@ -243,7 +243,7 @@ def game_handler(message):
 			save_data('wins:{}'.format(user_id), win_score)
 
 
-	elif message.text in load_data('wrong_answers:{}'.format(user_id)):
+	elif message.text in json.loads(load_data('wrong_answers:{}'.format(user_id))):
 		bot.reply_to(message, 'Неправильно :(', reply_markup = basic_markup)
 
 		if load_data('wins:{}'.format(user_id)) == None and load_data('losses:{}'.format(user_id)) == None:

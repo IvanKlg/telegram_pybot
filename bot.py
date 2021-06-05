@@ -101,8 +101,10 @@ def dispatcher(message):
 
 	if state == MAIN_STATE:
 		main_handler(message)
+		print('message sent to main hanlder')
 	elif state == IN_GAME_STATE:
 		game_handler(message)
+		print('sent to game handler')
 	elif state == DIFF_SET_STATE:
 		diff_handler(message)
 
@@ -111,15 +113,19 @@ def main_handler(message):
 	user_id = str(message.from_user.id)
 
 	if message.text == 'Привет':
+		print('hello recieved')
 		bot.reply_to(message,'Ну привет!', reply_markup = basic_markup)
 
 	# this block uploads the question from API and sends user to an answer state
 	elif message.text == 'Спроси меня вопрос':
 
+		print('question identified')
+
 		# if user has not set difficulty level, the questions will be easy by default
 		if load_data('difficulty:{}'.format(user_id)) == None:
 			load_question = json.dumps(requests.get(API_URL).json())
 			save_data('current_question:{}'.format(user_id), load_question)
+			print('question loaded')
 
 		# otherwise the chosen difficulty level will be used via params
 		else:
@@ -161,6 +167,7 @@ def main_handler(message):
 		ans_markup = ReplyKeyboardRemove()
 
 		save_data('state:{}'.format(user_id), IN_GAME_STATE)
+		print('sent to in game')
 
 		#change_data()
 
@@ -214,6 +221,8 @@ def game_handler(message):
 
 	user_id = str(message.from_user.id)
 
+	print('arrived at game handler')
+
 
 	if message.text	== load_data('right_answer:{}'.format(user_id)):
 		bot.reply_to(message, 'Правильно!', reply_markup = basic_markup)
@@ -244,6 +253,7 @@ def game_handler(message):
 	else: bot.reply_to(message, 'Я тебя не понял', reply_markup = basic_markup)
 
 	save_data('state:{}'.format(user_id), MAIN_STATE)
+	print('game state finished, sent to dispatcher')
 
 	#change_data()
 

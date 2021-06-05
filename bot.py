@@ -103,7 +103,7 @@ def dispatcher(message):
 	print('going to dispatch')
 
 	if state == MAIN_STATE:
-		print('problem with handler')
+		print('problem with handler x2')
 		main_handler(message)
 		print('message sent to main hanlder')
 	elif state == IN_GAME_STATE:

@@ -97,10 +97,13 @@ def dispatcher(message):
 	print(user_id)
 	state = load_data('state:{}'.format(user_id))
 	print(state)
+
 	if state == None:
 		state = MAIN_STATE
 	print('going to dispatch')
-	if state == MAIN_STATE:
+
+	#if state == MAIN_STATE:
+	if state == 'main':
 		main_handler(message)
 		print('message sent to main hanlder')
 	elif state == IN_GAME_STATE:
